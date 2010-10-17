@@ -1,0 +1,6 @@
+name = "Camera"
+description = "Grab an image from the clients attached camera and saves to node."
+dependencies[] = "content"
+dependencies[] = "imagefield"
+package = CCK
+core = 6.x

@@ -1,0 +1,270 @@
+<?php
+/**
+* Implementation of hook_field_info().
+*/
+/*
+function camera_field_field_info() {
+  return array(
+    // The machine name of the field, 
+    // no more than 32 characters.
+    'camera' => array(
+      // The human-readable label of the field that will be 
+      // seen in the Manage fields screen.
+      'label' => t('Camera image'),
+      // A description of what type of data the field stores.
+      'description' => t('Grab an image from the clients attached camera.'),
+      // An icon to use in Panels.
+      'content_icon' => 'icon_content_text.png',
+    ),
+  );
+}
+*/
+
+
+
+
+
+
+
+
+/**
+* Implementation of hook_widget_info().
+*
+* Here we indicate that the content module will handle
+* the default value and multiple values for these widgets.
+*
+* Callbacks can be omitted if default handing is used.
+* They're included here just so this module can be used
+* as an example for custom modules that might do things
+* differently.
+*/
+function camerafield_widget_info() {
+  return array(
+    // The machine name of the widget, no more than 32 
+    // characters.
+    'camera_widget' => array(
+      // The human-readable label of the field that will be 
+      // seen in the Manage fields screen.
+      'label' => t('Camera'),
+      // An array of the field types this widget can be 
+      // used with.
+      'field types' => array('filefield'),
+      // Who will handle multiple values, default is core.
+      // 'CONTENT_HANDLE_MODULE' means the module does it.
+      // See optionwidgets for an example of a module that 
+      // handles its own multiple values.
+      'multiple values' => CONTENT_HANDLE_CORE,
+      'callbacks' => array(
+        // Who will create the default value, default is core.
+        // 'CONTENT_CALLBACK_CUSTOM' means the module does it.
+        // 'CONTENT_CALLBACK_NONE' means this widget has 
+        // no default value.
+        'default value' => CONTENT_CALLBACK_NONE,
+      ),
+    ),
+  );
+}
+
+
+/**
+* Implementation of hook_widget_settings().
+*/
+function camerafield_widget_settings($op, $widget) {
+  switch ($op) {
+    // Create the form element to be used on the widget 
+    // settings form. Widget settings can be different 
+    // for each shared instance of the same field and 
+    // should define the way the value is displayed to 
+    // the user in the edit form for that content type.
+    case 'form':
+      $form = array();
+      $size_width = (isset($widget['size_width']) && is_numeric($widget['size_width'])) ? $widget['size_width'] : 320;
+      $size_height = (isset($widget['size_height']) && is_numeric($widget['size_height'])) ? $widget['size_height'] : 240;
+      $form['size_width'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Width of camera preview'),
+        '#default_value' => $size_width,
+        '#element_validate' => array('_element_validate_integer_positive'),
+        '#required' => TRUE,
+        '#size' => 4,
+      );
+      $form['size_height'] = array(
+        '#type' => 'textfield',
+        '#title' => t('Height of camera preview'),
+        '#default_value' => $size_height,
+        '#element_validate' => array('_element_validate_integer_positive'),
+        '#required' => TRUE,
+        '#size' => 4,
+      );
+      return $form;
+
+    // Return an array of the names of the widget settings 
+    // defined by this module. These are the items that 
+    // CCK will store in the widget definition and they 
+    // will be available in the $field['widget'] array.
+    // This should match the items defined in 'form' above.
+    case 'save':
+      return array('size_width', 'size_height');
+  }
+}
+
+
+/**
+* Implementation of hook_widget().
+*
+* Attach a single form element to the form. 
+* 
+* CCK core fields only add a stub element and builds 
+* the complete item in #process so reusable elements 
+* created by hook_elements can be plugged into any 
+* module that provides valid $field information.
+* 
+* Custom widgets that don't care about using hook_elements
+* can be built out completely at this time.
+*
+* If there are multiple values for this field and CCK is 
+* handling multiple values, the content module will call 
+* this function as many times as needed.
+*
+* @param $form
+*   the entire form array, 
+*   $form['#node'] holds node information
+* @param $form_state
+*   the form_state, 
+*   $form_state['values'][$field['field_name']]
+*   holds the field's form values.
+* @param $field
+*   the field array
+* @param $items
+*   array of default values for this field
+* @param $delta
+*   the order of this item in the array of 
+*   subelements (0, 1, 2, etc)
+*
+* @return
+*   the form item for a single element for this field
+*/
+function camerafield_widget(&$form, &$form_state, $field, $items, $delta = 0) {
+
+  $path = drupal_get_path('module', 'camerafield');
+  drupal_add_js($path . '/js/jquery.webcam.js');
+  drupal_add_js(theme('camerafield_settings', $field['widget']['size_width'], $field['widget']['size_height']), 'inline', 'footer');
+
+  // Start with the FileField widget as a basic start.
+  // Note that FileField needs to modify $form by reference.
+   $element = filefield_widget($form, $form_state, $field, $items, $delta);
+
+  return $element;
+}
+
+
+/**
+ * Implementation of FAPI hook_elements().
+ *
+ * Any FAPI callbacks needed for individual widgets can be declared here,
+ * and the element will be passed to those callbacks for processing.
+ *
+ * Drupal will automatically theme the element using a theme with
+ * the same name as the hook_elements key.
+ *
+ * Autocomplete_path is not used by text_widget but other widgets can use it
+ * (see nodereference and userreference).
+ */
+function camerafield_elements() {
+  $elements = array();
+
+ // Catch problems when this is called too early during installation or update.
+  if (!module_exists('filefield')) {
+    return $elements;
+  }
+
+  // An ImageField is really just a FileField with extra processing.
+  $filefield_elements = module_invoke('filefield', 'elements');
+  $elements['camera_widget'] = $filefield_elements['filefield_widget'];
+  $elements['camera_widget']['#process'][] = 'camerafield_widget_process';
+  $elements['camera_widget']['#element_validate'][] = 'camerafield_widget_validate';
+
+  // ImageField needs a separate value callback to save its alt and title texts.
+  $elements['camera_widget']['#value_callback'] = 'camerafield_widget_value';
+
+  return $elements;
+}
+
+function camerafield_widget_process($element, $edit, &$form_state, $form) {
+  $field = $form['#field_info'][$element['#field_name']];
+  $field_key = $element['#columns'][0];
+  $delta = $element['#delta'];
+  $element[$field_key] = array(
+    '#type' => 'markup',
+    '#value' => '<div id="camera"></div><a href="javascript:webcam.capture();void(0);">Take a picture instantly</a>',
+    // The following values were set by the content module and need
+    // to be passed down to the nested element.
+    '#title' => $element['#title'],
+    '#description' => $element['#description'],
+    '#required' => $element['#required'],
+    '#field_name' => $element['#field_name'],
+    '#type_name' => $element['#type_name'],
+    '#delta' => $element['#delta'],
+    '#columns' => $element['#columns'],
+  );
+
+  // Used so that hook_field('validate') knows where to flag an error.
+  $element['_error_element'] = array(
+    '#type' => 'value',
+    '#value' => implode('][', array_merge($element['#parents'], array($field_key))),
+  );
+
+  return $element;
+}
+
+
+function camerafield_theme($existing, $type, $theme, $path) {
+  return array(
+    'camerafield_settings' => array(
+      'arguments' => array('width' => NULL, 'height' => NULL),
+    ),
+    'camera_widget' => array(
+      'arguments' => array('element' => NULL),
+    ),
+
+  );
+}
+
+
+function theme_camerafield_settings($width, $height) {
+  $path = drupal_get_path('module', 'camerafield') . '/js';
+
+  $settings = '$(document).ready(function() {
+    $("#camera").webcam({
+            width: ' . $width . ',
+            height: ' . $height . ',
+            mode: "callback",
+            swffile: "/' . $path .'/jscam_canvas_only.swf",
+            onTick: function() {},
+            onSave: function() {},
+            onCapture: function() {
+            },
+            debug: function (type, string) {
+              console.log(string);
+            },
+            onLoad: function() {}
+    });
+  });';
+  
+  return $settings;
+}
+
+/**
+ * FAPI theme for an individual text elements.
+ *
+ * The textfield or textarea is already rendered by the
+ * textfield or textarea themes and the html output
+ * lives in $element['#children']. Override this theme to
+ * make custom changes to the output.
+ *
+ * $element['#field_name'] contains the field name
+ * $element['#delta]  is the position of this element in the group
+ */
+function theme_camera_widget($element) {
+  return $element['#children'];
+}
